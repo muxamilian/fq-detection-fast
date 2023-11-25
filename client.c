@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <assert.h>
 
 // Define some constants
 #define DEFAULT_PORT 13579
@@ -116,8 +117,8 @@ int main(int argc, char *argv[])
         }
         // Echo back and tell the server from port it came, the lower one or the higher one.
         // This is encoded in `sock_num`
-        char byte = sock_num;
-        data[SEQ_NUM_LEN + TIMESTAMP_LEN + 1 - 1] = byte;
+        assert(sock_num >= -1 && sock_num <= 1);
+        data[SEQ_NUM_LEN + TIMESTAMP_LEN + 1 - 1] = (char) sock_num;
         sendto(sock, data, sizeof(data), 0, base_addr, base_addr_len);
     }
 
