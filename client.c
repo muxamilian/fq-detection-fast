@@ -109,12 +109,13 @@ int main(int argc, char *argv[])
         int sock_num = -1;
         for (int i = 0; i < 2; i++)
         {
-            if (ports[i] == ((struct sockaddr_in *)&addr)->sin_port)
+            if (ports[i] == ntohs(((struct sockaddr_in *)&addr)->sin_port))
             {
                 sock_num = i;
                 break;
             }
         }
+        printf("sock_num is %d\n", sock_num);
         // Echo back and tell the server from port it came, the lower one or the higher one.
         // This is encoded in `sock_num`
         assert(sock_num >= -1 && sock_num <= 1);

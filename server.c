@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/select.h>
 #include <assert.h>
+#include <unistd.h>
 
 double get_unix_epoch_time() {
     struct timespec ts;
@@ -40,7 +41,6 @@ int recv_socket;
 double initial_rtt;
 double latest_rtts[2];
 int next_socket;
-int port_indices[2];
 char *data_buffer;
 char *send_buffer;
 
@@ -161,20 +161,16 @@ void create_recv_socket() {
     perror("bind");
     exit(1);
   }
-  // Set the socket to non-blocking mode
-  // if (fcntl(recv_socket, F_SETFL, O_NONBLOCK) < 0) {
-  //   // Socket setting failed
-  //   perror("fcntl");
-  //   exit(1);
-  // }
 }
+
+  struct sockaddr_in6 addr;
+  socklen_t addrlen = sizeof(addr);
 
 // A function to get an estimate of the RTT
 void get_initial_rtt() {
   puts("Get initial rtt");
   // Create a sockaddr_in6 structure to store the client address
-  struct sockaddr_in6 addr;
-  socklen_t addrlen = sizeof(addr);
+  addrlen = sizeof(addr);
   // Receive a packet from the client
   char data[1500];
   puts("Listening");
@@ -237,9 +233,6 @@ void detect_fair_queuing() {
   latest_rtts[1] = initial_rtt;
   // Initialize the next socket to send from
   next_socket = 0;
-  // Initialize the port indices
-  port_indices[0] = 0;
-  port_indices[1] = 1;
   // Allocate memory for the data buffer and the send buffer
   char data_buffer[SEQ_LEN + TIMESTAMP_LEN + FROM_SOCKET_LEN];
   send_buffer = malloc(payload_size);
@@ -249,7 +242,7 @@ void detect_fair_queuing() {
     exit(1);
   }
   // Copy the padding sequence to the send buffer
-  memcpy(send_buffer + SEQ_LEN, padding_sequence, padding_sequence_len);
+  memcpy(send_buffer + SEQ_LEN + TIMESTAMP_LEN, padding_sequence, padding_sequence_len);
   // Run as many cycles as necessary to detect fair queuing
   for (int cycle_num = 0; cycle_num < 1/*INT_MAX*/; cycle_num++) {
     // Initialize the current sequence numbers at the beginning of the cycle
@@ -332,6 +325,34 @@ void detect_fair_queuing() {
           }
         }
       }
+      if (last_ack_times[0] != -1 && last_ack_times[1] != -1) {
+        break;
+      }
+      double next_send_time_delta = INFINITY;
+      for (int i=0; i<2; i++) {
+        double packets_that_should_have_been_sent = floor(rates[i]*(current_time-start_time));
+        double packets_that_were_not_sent_but_should_have = packets_that_should_have_been_sent - (seq_nums[i] - seq_nums_beginning[i]);
+        double delta_till_next_packet;
+        if (packets_that_were_not_sent_but_should_have <= 0) {
+            delta_till_next_packet = start_time + (packets_that_should_have_been_sent + 1)/rates[i] - current_time;
+        } else {
+          delta_till_next_packet = -packets_that_were_not_sent_but_should_have;
+        }
+        if (delta_till_next_packet <= next_send_time_delta) {
+          next_socket = i;
+          next_send_time_delta = delta_till_next_packet;
+        }
+      }
+      if (next_send_time_delta > 0) {
+        // Convert to microseconds
+        usleep((unsigned int) (next_send_time_delta * 1000000));
+      }
+      memcpy(send_buffer, &(seq_nums[next_socket]), sizeof(seq_nums[next_socket]));
+      double current_time_at_send = get_unix_epoch_time();
+      memcpy(send_buffer + sizeof(seq_nums[next_socket]), &current_time_at_send, sizeof(current_time_at_send));
+      sendto(socks[next_socket], send_buffer, payload_size, 0, (struct sockaddr *)&addr, addrlen);
+      puts("Yeah, sent!");
+      seq_nums[next_socket] += 1;
     }
   }
 }
