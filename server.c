@@ -376,7 +376,7 @@ void detect_fair_queuing() {
     // Ratio of receiving rate over sending rate for the second flow
     double second_ratio = receiving_rate2/sending_rate2;
     if (debug) {
-      printf("End %d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%d,%d,%d,%d,%d,%d,%.3f,%.3f\n", cycle_num, packets_actually_sent[0], packets_actually_sent[1], rtts_ms[0], rtts_ms[1], sent_enough[0], sent_enough[1], seq_nums_beginning[0], seq_nums_beginning[1], should_send[0], should_send[1], seq_nums_end[0], seq_nums_end[0], num_acked[0], num_acked[1], seq_nums[0], seq_nums[1], first_ratio, second_ratio); 
+      printf("End cycle_num:%d,packets_actually_sent:%d,%d,rtts_ms:%d,%d,sent_enough:%d,%d,seq_nums_beginning:%d,%d,should_send:%.3f,%.3f,seq_nums_end:%d,%d,num_acked:%d,%d,seq_nums:%d,%d,first_ratio:%.3f,first_ratio:%.3f\n", cycle_num, packets_actually_sent[0], packets_actually_sent[1], rtts_ms[0], rtts_ms[1], sent_enough[0], sent_enough[1], seq_nums_beginning[0], seq_nums_beginning[1], should_send[0], should_send[1], seq_nums_end[0], seq_nums_end[1], num_acked[0], num_acked[1], seq_nums[0], seq_nums[1], first_ratio, second_ratio); 
     }
     if (second_ratio < 0.5) {
       double loss_ratio = first_ratio/second_ratio;
