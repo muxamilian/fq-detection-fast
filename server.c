@@ -354,6 +354,50 @@ void detect_fair_queuing() {
       puts("Yeah, sent!");
       seq_nums[next_socket] += 1;
     }
+    int packets_actually_sent[2];
+    for (int packets_actually_sent_i=0; packets_actually_sent_i<2; packets_actually_sent_i++) {
+      packets_actually_sent[packets_actually_sent_i] = seq_nums_end[packets_actually_sent_i] - seq_nums_beginning[packets_actually_sent_i];
+    }
+    // Could the link be saturated?
+    int sent_enough[2];
+    for (int sent_enough_i=0; sent_enough_i<2; sent_enough_i++) {
+      sent_enough[sent_enough_i] = ceil(packets_actually_sent[sent_enough_i]) + 1 >= should_send[sent_enough_i] * 15.0/16.0;
+    }
+    int rtts_ms[2];
+    for (int latest_rtts_i=0; latest_rtts_i<2; latest_rtts_i++) {
+      rtts_ms[latest_rtts_i] = round(latest_rtts[latest_rtts_i]*1000);
+    }
+    double receiving_rate1 = (num_acked[0]/(last_ack_times[0]-first_ack_times[0]));
+    double receiving_rate2 = (num_acked[1]/(last_ack_times[1]-first_ack_times[1]));
+    double sending_rate1 = (packets_actually_sent[0]/(send_end_time-start_time));
+    double sending_rate2 = (packets_actually_sent[1]/(send_end_time-start_time));
+    // Ratio of receiving rate over sending rate for the first flow
+    double first_ratio = receiving_rate1/sending_rate1;
+    // Ratio of receiving rate over sending rate for the second flow
+    double second_ratio = receiving_rate2/sending_rate2;
+    if (debug) {
+      printf("End %d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%d,%d,%d,%d,%d,%d,%.3f,%.3f\n", cycle_num, packets_actually_sent[0], packets_actually_sent[1], rtts_ms[0], rtts_ms[1], sent_enough[0], sent_enough[1], seq_nums_beginning[0], seq_nums_beginning[1], should_send[0], should_send[1], seq_nums_end[0], seq_nums_end[0], num_acked[0], num_acked[1], seq_nums[0], seq_nums[1], first_ratio, second_ratio); 
+    }
+    if (second_ratio < 0.5) {
+      double loss_ratio = first_ratio/second_ratio;
+      if (loss_ratio >= 1.5) {
+        // This means that second flow sent a lot more but couldn't get more data to the client
+        double confidence = fmin((loss_ratio-1.5)*2, 1);
+        int rounded_confidence = round(confidence*100);
+        printf("Fair queuing detected with a confidence of %d%%\n", rounded_confidence);
+      } else {
+        // The second flow sent more and got more data to the client
+        double confidence = fmin(1-((loss_ratio-1)*2), 1);
+        int rounded_confidence = round(confidence*100);
+        printf("First-come first-served detected with a confidence of %d%%\n", rounded_confidence);
+      }
+      break;
+    } else if (sent_enough[0] == 0 || sent_enough[1] == 0) {
+      double managed_to_send_mbit = (sending_rate1+sending_rate2)*8*mtu/1000000;
+      double wanted_to_send = rates_in_mbit[0] + rates_in_mbit[1]; 
+      printf("Failed to utilize the link. Tried to send %.3f Mbit/s but only managed %.3f Mbit/s. Aborting", wanted_to_send, managed_to_send_mbit);
+      break;
+    }
   }
 }
 
