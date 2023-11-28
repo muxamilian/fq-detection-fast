@@ -338,7 +338,6 @@ void detect_fair_queuing() {
       for (int i=0; i<2; i++) {
         packets_that_should_have_been_sent = floor(rates[i]*(current_time-start_time));
         packets_that_were_not_sent_but_should_have = packets_that_should_have_been_sent - (seq_nums[i] - seq_nums_beginning[i]);
-        delta_till_next_packet;
         if (packets_that_were_not_sent_but_should_have <= 0) {
             delta_till_next_packet = start_time + (packets_that_should_have_been_sent + 1)/rates[i] - current_time;
         } else {
