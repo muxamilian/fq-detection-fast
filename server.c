@@ -12,6 +12,7 @@
 #include <sys/select.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 
 double get_unix_epoch_time() {
     struct timespec ts;
@@ -226,7 +227,8 @@ void get_initial_rtt() {
 // A function to detect fair queuing
 void detect_fair_queuing() {
   puts("Trying to detect fair queuing");
-  fd_set read_sds;
+  // Num of bytes to read on recv_socket
+  int count;
   int recv_socket_plus_one = recv_socket+1;
   // Initialize the rates in packets per second
   double rates[2] = {15, 30};
@@ -288,16 +290,13 @@ void detect_fair_queuing() {
       }
       while (1) {
         // Try to receive an acknowledgement from the client
-        FD_ZERO(&read_sds);
-        FD_SET(recv_socket, &read_sds);
-
-        int ret = select(recv_socket_plus_one, &read_sds, NULL, NULL, &timeout_zero);
-        if (ret < 0) {
-            perror("Select error");
+        ioctl(recv_socket, FIONREAD, &count);
+        if (count == -1) {
+          perror("ioctl error");
           exit(EXIT_FAILURE);
-        } else if (ret == 0) {
+        } else if (count == 0) {
           break;
-        } else if (FD_ISSET(recv_socket, &read_sds)) {
+        } else {
           ssize_t bytes_received = recv(recv_socket, data_buffer, sizeof(data_buffer), 0);
           if (bytes_received == -1) {
             perror("Error receiving data");
