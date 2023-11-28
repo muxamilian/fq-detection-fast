@@ -229,7 +229,16 @@ void detect_fair_queuing() {
   puts("Trying to detect fair queuing");
   // Num of bytes to read on recv_socket
   int count;
-  int recv_socket_plus_one = recv_socket+1;
+  ssize_t bytes_received;
+  unsigned int ack_num;
+  double send_timestamp;
+  char sock_index;
+  double current_time;
+  double next_send_time_delta;
+  double packets_that_should_have_been_sent;
+  double packets_that_were_not_sent_but_should_have;
+  double delta_till_next_packet;
+  double current_time_at_send;
   // Initialize the rates in packets per second
   double rates[2] = {15, 30};
   // Initialize the latest RTTs
@@ -282,7 +291,7 @@ void detect_fair_queuing() {
       printf("Start cycle_num %d, rates %.1f %.1f, rates_in_mbit %.5f %.5f, time_to_run %.5f\n", cycle_num, rates[0], rates[1], rates_in_mbit[0], rates_in_mbit[1], time_to_run);
     }
     while (1) {
-      double current_time = get_unix_epoch_time();
+      current_time = get_unix_epoch_time();
       // Check if enough packets were sent already
       if (seq_nums_end[0] == -1 && current_time > start_time + time_to_run) {
         seq_nums_end[0] = seq_nums[0]; seq_nums_end[1] = seq_nums[1];
@@ -290,6 +299,7 @@ void detect_fair_queuing() {
       }
       while (1) {
         // Try to receive an acknowledgement from the client
+        // ioctl checks whether there's data to read in the socket
         ioctl(recv_socket, FIONREAD, &count);
         if (count == -1) {
           perror("ioctl error");
@@ -297,13 +307,10 @@ void detect_fair_queuing() {
         } else if (count == 0) {
           break;
         } else {
-          ssize_t bytes_received = recv(recv_socket, data_buffer, sizeof(data_buffer), 0);
+          bytes_received = recv(recv_socket, data_buffer, sizeof(data_buffer), 0);
           if (bytes_received == -1) {
             perror("Error receiving data");
           } else {
-            unsigned int ack_num;
-            double send_timestamp;
-            char sock_index;
             memcpy(&ack_num, data_buffer, sizeof(ack_num));
             memcpy(&send_timestamp, data_buffer + sizeof(ack_num), sizeof(send_timestamp));
             memcpy(&sock_index, data_buffer + sizeof(ack_num) + sizeof(send_timestamp), sizeof(sock_index));
@@ -327,11 +334,11 @@ void detect_fair_queuing() {
       if (last_ack_times[0] != -1 && last_ack_times[1] != -1) {
         break;
       }
-      double next_send_time_delta = INFINITY;
+      next_send_time_delta = INFINITY;
       for (int i=0; i<2; i++) {
-        double packets_that_should_have_been_sent = floor(rates[i]*(current_time-start_time));
-        double packets_that_were_not_sent_but_should_have = packets_that_should_have_been_sent - (seq_nums[i] - seq_nums_beginning[i]);
-        double delta_till_next_packet;
+        packets_that_should_have_been_sent = floor(rates[i]*(current_time-start_time));
+        packets_that_were_not_sent_but_should_have = packets_that_should_have_been_sent - (seq_nums[i] - seq_nums_beginning[i]);
+        delta_till_next_packet;
         if (packets_that_were_not_sent_but_should_have <= 0) {
             delta_till_next_packet = start_time + (packets_that_should_have_been_sent + 1)/rates[i] - current_time;
         } else {
@@ -347,7 +354,7 @@ void detect_fair_queuing() {
         usleep((unsigned int) (next_send_time_delta * 1000000));
       }
       memcpy(send_buffer, &(seq_nums[next_socket]), sizeof(seq_nums[next_socket]));
-      double current_time_at_send = get_unix_epoch_time();
+      current_time_at_send = get_unix_epoch_time();
       memcpy(send_buffer + sizeof(seq_nums[next_socket]), &current_time_at_send, sizeof(current_time_at_send));
       sendto(socks[next_socket], send_buffer, payload_size, 0, (struct sockaddr *)&addr, addrlen);
       // puts("Yeah, sent!");
