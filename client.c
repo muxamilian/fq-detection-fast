@@ -115,10 +115,10 @@ int main(int argc, char *argv[])
                 break;
             }
         }
-        printf("sock_num is %d\n", sock_num);
+        // printf("sock_num is %d\n", sock_num);
         // Echo back and tell the server from port it came, the lower one or the higher one.
         // This is encoded in `sock_num`
-        assert(sock_num >= -1 && sock_num <= 1);
+        // assert(sock_num >= -1 && sock_num <= 1);
         data[SEQ_NUM_LEN + TIMESTAMP_LEN + 1 - 1] = (char) sock_num;
         sendto(sock, data, sizeof(data), 0, base_addr, base_addr_len);
     }

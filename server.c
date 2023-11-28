@@ -226,6 +226,8 @@ void get_initial_rtt() {
 // A function to detect fair queuing
 void detect_fair_queuing() {
   puts("Trying to detect fair queuing");
+  fd_set read_sds;
+  int recv_socket_plus_one = recv_socket+1;
   // Initialize the rates in packets per second
   double rates[2] = {15, 30};
   // Initialize the latest RTTs
@@ -244,7 +246,7 @@ void detect_fair_queuing() {
   // Copy the padding sequence to the send buffer
   memcpy(send_buffer + SEQ_LEN + TIMESTAMP_LEN, padding_sequence, padding_sequence_len);
   // Run as many cycles as necessary to detect fair queuing
-  for (int cycle_num = 0; cycle_num < 1/*INT_MAX*/; cycle_num++) {
+  for (int cycle_num = 0; cycle_num < INT_MAX; cycle_num++) {
     // Initialize the current sequence numbers at the beginning of the cycle
     int seq_nums_beginning[2];
     seq_nums_beginning[0] = seq_nums[0];
@@ -265,14 +267,14 @@ void detect_fair_queuing() {
     double min_time = 1 / rates[0];
     // Get the time of the measurement. Maximum of the current RTTs of both subflows. At least 100ms.
     double time_to_run = fmax(fmax(fmax(latest_rtts[0], latest_rtts[1]), 0.1), min_time);
-    double should_send[2];
+    int should_send[2];
     for (int should_send_i=0; should_send_i < 2; should_send_i++) {
       should_send[should_send_i] = rates[should_send_i] * time_to_run;
     }
     double rates_in_mbit[2];
     for (int rates_in_mbit_i=0; rates_in_mbit_i < 2; rates_in_mbit_i++) {
       rates_in_mbit[rates_in_mbit_i] = \
-        rates[rates_in_mbit_i] * ((double) mtu)/1000000.0;
+        rates[rates_in_mbit_i] * 8 * ((double) mtu)/1000000.0;
     }
     if (debug) {
       printf("Start cycle_num %d, rates %.1f %.1f, rates_in_mbit %.5f %.5f, time_to_run %.5f\n", cycle_num, rates[0], rates[1], rates_in_mbit[0], rates_in_mbit[1], time_to_run);
@@ -286,12 +288,10 @@ void detect_fair_queuing() {
       }
       while (1) {
         // Try to receive an acknowledgement from the client
-        fd_set read_sds;
-
         FD_ZERO(&read_sds);
         FD_SET(recv_socket, &read_sds);
 
-        int ret = select(recv_socket+1, &read_sds, NULL, NULL, &timeout_zero);
+        int ret = select(recv_socket_plus_one, &read_sds, NULL, NULL, &timeout_zero);
         if (ret < 0) {
             perror("Select error");
           exit(EXIT_FAILURE);
@@ -308,8 +308,8 @@ void detect_fair_queuing() {
             memcpy(&ack_num, data_buffer, sizeof(ack_num));
             memcpy(&send_timestamp, data_buffer + sizeof(ack_num), sizeof(send_timestamp));
             memcpy(&sock_index, data_buffer + sizeof(ack_num) + sizeof(send_timestamp), sizeof(sock_index));
-            printf("Server loop: Received packet with ack_num %d and timestamp %f and sock_index %d\n", ack_num, send_timestamp, (int) sock_index);
-            assert(sock_index >=0 && sock_index <= 1);
+            // printf("Server loop: Received packet with ack_num %d and timestamp %f and sock_index %d\n", ack_num, send_timestamp, (int) sock_index);
+            // assert(sock_index >=0 && sock_index <= 1);
             latest_rtts[sock_index] = current_time - send_timestamp;
             if (ack_num >= seq_nums_beginning[sock_index] && (seq_nums_end[0] == -1 || ack_num < seq_nums_end[sock_index])) {
               if (num_acked[sock_index] == 0) {
@@ -351,7 +351,7 @@ void detect_fair_queuing() {
       double current_time_at_send = get_unix_epoch_time();
       memcpy(send_buffer + sizeof(seq_nums[next_socket]), &current_time_at_send, sizeof(current_time_at_send));
       sendto(socks[next_socket], send_buffer, payload_size, 0, (struct sockaddr *)&addr, addrlen);
-      puts("Yeah, sent!");
+      // puts("Yeah, sent!");
       seq_nums[next_socket] += 1;
     }
     int packets_actually_sent[2];
@@ -376,7 +376,7 @@ void detect_fair_queuing() {
     // Ratio of receiving rate over sending rate for the second flow
     double second_ratio = receiving_rate2/sending_rate2;
     if (debug) {
-      printf("End cycle_num:%d,packets_actually_sent:%d,%d,rtts_ms:%d,%d,sent_enough:%d,%d,seq_nums_beginning:%d,%d,should_send:%.3f,%.3f,seq_nums_end:%d,%d,num_acked:%d,%d,seq_nums:%d,%d,first_ratio:%.3f,first_ratio:%.3f\n", cycle_num, packets_actually_sent[0], packets_actually_sent[1], rtts_ms[0], rtts_ms[1], sent_enough[0], sent_enough[1], seq_nums_beginning[0], seq_nums_beginning[1], should_send[0], should_send[1], seq_nums_end[0], seq_nums_end[1], num_acked[0], num_acked[1], seq_nums[0], seq_nums[1], first_ratio, second_ratio); 
+      printf("End cycle_num:%d,packets_actually_sent:%d,%d,rtts_ms:%d,%d,sent_enough:%d,%d,seq_nums_beginning:%d,%d,should_send:%d,%d,seq_nums_end:%d,%d,num_acked:%d,%d,seq_nums:%d,%d,first_ratio:%.3f,first_ratio:%.3f\n", cycle_num, packets_actually_sent[0], packets_actually_sent[1], rtts_ms[0], rtts_ms[1], sent_enough[0], sent_enough[1], seq_nums_beginning[0], seq_nums_beginning[1], should_send[0], should_send[1], seq_nums_end[0], seq_nums_end[1], num_acked[0], num_acked[1], seq_nums[0], seq_nums[1], first_ratio, second_ratio); 
     }
     if (second_ratio < 0.5) {
       double loss_ratio = first_ratio/second_ratio;
@@ -395,9 +395,12 @@ void detect_fair_queuing() {
     } else if (sent_enough[0] == 0 || sent_enough[1] == 0) {
       double managed_to_send_mbit = (sending_rate1+sending_rate2)*8*mtu/1000000;
       double wanted_to_send = rates_in_mbit[0] + rates_in_mbit[1]; 
-      printf("Failed to utilize the link. Tried to send %.3f Mbit/s but only managed %.3f Mbit/s. Aborting", wanted_to_send, managed_to_send_mbit);
+      printf("Failed to utilize the link. Tried to send %.3f Mbit/s but only managed %.3f Mbit/s. Aborting\n", wanted_to_send, managed_to_send_mbit);
       break;
     }
+    // If nothing happened, double the sending rate, to try to saturate the link
+    rates[0] *= 2;
+    rates[1] *= 2;    
   }
 }
 
@@ -417,5 +420,6 @@ int main(int argc, char *argv[]) {
   create_recv_socket();
   get_initial_rtt();
   detect_fair_queuing();
+  puts("Terminating server");
   return 0;
 }
