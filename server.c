@@ -9,10 +9,11 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <string.h>
-#include <sys/select.h>
 #include <assert.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#define likely(x)      __builtin_expect(!!(x), 1) 
+#define unlikely(x)    __builtin_expect(!!(x), 0)
 
 double get_unix_epoch_time() {
     struct timespec ts;
@@ -33,7 +34,6 @@ int mtu;
 int debug;
 int socks[2];
 int seq_nums[2];
-struct sockaddr_in6 remote_addresses[2];
 int payload_size;
 int padding_sequence_len;
 char *padding_sequence;
@@ -44,6 +44,9 @@ double latest_rtts[2];
 int next_socket;
 char *data_buffer;
 char *send_buffer;
+
+struct sockaddr_in6 remote_addr;
+socklen_t remote_addrlen;
 
 // A function to parse the command line arguments
 void parse_args(int argc, char *argv[]) {
@@ -111,12 +114,12 @@ void create_sockets() {
       perror("socket");
       exit(1);
     }
-  // Disable IPV6_V6ONLY option
-  int v6only = 0;
-  if (setsockopt(socks[i], IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) == -1) {
-      perror("Error setting IPV6_V6ONLY option");
-      exit(EXIT_FAILURE);
-  }
+    // Disable IPV6_V6ONLY option
+    int v6only = 0;
+    if (setsockopt(socks[i], IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) == -1) {
+        perror("Error setting IPV6_V6ONLY option");
+        exit(EXIT_FAILURE);
+    }
     // Create a sockaddr_in6 structure
     struct sockaddr_in6 addr;
     memset(&addr, 0, sizeof(addr));
@@ -124,7 +127,7 @@ void create_sockets() {
     addr.sin6_port = htons(port + i);
     addr.sin6_addr = in6addr_any;
     // Bind the socket to the address
-    if (bind(socks[i], (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (bind(socks[i], (struct sockaddr *) &addr, sizeof(addr)) < 0) {
       // Socket binding failed
       perror("bind");
       exit(1);
@@ -164,26 +167,25 @@ void create_recv_socket() {
   }
 }
 
-  struct sockaddr_in6 addr;
-  socklen_t addrlen = sizeof(addr);
-
 // A function to get an estimate of the RTT
 void get_initial_rtt() {
   puts("Get initial rtt");
   // Create a sockaddr_in6 structure to store the client address
-  addrlen = sizeof(addr);
+  remote_addrlen = sizeof(remote_addr);
   // Receive a packet from the client
   char data[1500];
   puts("Listening");
-  int n = recvfrom(recv_socket, data, 1500, 0, (struct sockaddr *)&addr, &addrlen);
+  int n = recvfrom(recv_socket, data, 1500, 0, (struct sockaddr *)&remote_addr, &remote_addrlen);
   if (n < 0) {
     // Receive failed
     perror("recvfrom");
     exit(1);
   }
-  puts("Received packet");
-  // Store the client address
-  remote_addresses[0] = addr;
+  for (int i=0; i<2; i++) {
+    if (connect(socks[i], (struct sockaddr *) &remote_addr, remote_addrlen) != 0) {
+      perror("Connect in server failed");
+    }
+  }
   // Get the current time
   double t1 = get_unix_epoch_time();
   // Pack a message with the sequence number and the timestamp
@@ -193,14 +195,14 @@ void get_initial_rtt() {
   memcpy(ret_msg + sizeof(zero), &t1, sizeof(t1));
 
   // Send the message to the client
-  n = sendto(socks[0], ret_msg, sizeof(ret_msg), 0, (struct sockaddr *)&addr, addrlen);
+  n = send(socks[0], ret_msg, sizeof(ret_msg), 0);
   if (n < 0) {
     // Send failed
-    perror("sendto");
+    perror("send");
     exit(1);
   }
   // Receive another packet from the client
-  n = recvfrom(recv_socket, data, 1500, 0, (struct sockaddr *)&addr, &addrlen);
+  n = recv(recv_socket, data, 1500, 0);
   if (n < 0) {
     // Receive failed
     perror("recvfrom");
@@ -220,7 +222,7 @@ void get_initial_rtt() {
   initial_rtt = t2 - t1;
   // Print the debug information
   if (debug) {
-    printf("Got connection from %s %d with an rtt of %.3f\n", inet_ntop(AF_INET6, &addr.sin6_addr, data, 1500), ntohs(addr.sin6_port), initial_rtt);
+    printf("Got connection from %s %d with an rtt of %.3f\n", inet_ntop(AF_INET6, &remote_addr.sin6_addr, data, 1500), ntohs(remote_addr.sin6_port), initial_rtt);
   }
 }
 
@@ -301,21 +303,21 @@ void detect_fair_queuing() {
         // Try to receive an acknowledgement from the client
         // ioctl checks whether there's data to read in the socket
         ioctl(recv_socket, FIONREAD, &count);
-        if (count == -1) {
+        if (unlikely(count == -1)) {
           perror("ioctl error");
           exit(EXIT_FAILURE);
         } else if (count == 0) {
           break;
         } else {
           bytes_received = recv(recv_socket, data_buffer, sizeof(data_buffer), 0);
-          if (bytes_received == -1) {
+          if (unlikely(bytes_received == -1)) {
             perror("Error receiving data");
           } else {
             memcpy(&ack_num, data_buffer, sizeof(ack_num));
             memcpy(&send_timestamp, data_buffer + sizeof(ack_num), sizeof(send_timestamp));
             memcpy(&sock_index, data_buffer + sizeof(ack_num) + sizeof(send_timestamp), sizeof(sock_index));
             // printf("Server loop: Received packet with ack_num %d and timestamp %f and sock_index %d\n", ack_num, send_timestamp, (int) sock_index);
-            // assert(sock_index >=0 && sock_index <= 1);
+            assert(sock_index >=0 && sock_index <= 1);
             latest_rtts[sock_index] = current_time - send_timestamp;
             if (ack_num >= seq_nums_beginning[sock_index] && (seq_nums_end[0] == -1 || ack_num < seq_nums_end[sock_index])) {
               if (num_acked[sock_index] == 0) {
@@ -353,10 +355,14 @@ void detect_fair_queuing() {
         usleep((unsigned int) (next_send_time_delta * 1000000));
       }
       memcpy(send_buffer, &(seq_nums[next_socket]), sizeof(seq_nums[next_socket]));
-      current_time_at_send = get_unix_epoch_time();
+      current_time_at_send = current_time + fmax(next_send_time_delta, 0);
       memcpy(send_buffer + sizeof(seq_nums[next_socket]), &current_time_at_send, sizeof(current_time_at_send));
-      sendto(socks[next_socket], send_buffer, payload_size, 0, (struct sockaddr *)&addr, addrlen);
-      // puts("Yeah, sent!");
+      ssize_t n = send(socks[next_socket], send_buffer, payload_size, 0);
+      if (n < 0) {
+        // Send failed
+        perror("send");
+        exit(1);
+      }
       seq_nums[next_socket] += 1;
     }
     int packets_actually_sent[2];

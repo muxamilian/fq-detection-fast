@@ -57,7 +57,6 @@ int main(int argc, char *argv[])
         perror("socket");
         exit(1);
     }
-
     // Get IP address from host name
     struct addrinfo hints, *resolved_server_address;
     memset(&hints, 0, sizeof(hints));
@@ -76,6 +75,16 @@ int main(int argc, char *argv[])
     // Address of the server and port number
     struct sockaddr *base_addr = resolved_server_address->ai_addr;
     socklen_t base_addr_len = resolved_server_address->ai_addrlen;
+
+    int send_sock = socket(address_family, SOCK_DGRAM, 0);
+    if (send_sock < 0)
+    {
+        perror("send socket");
+        exit(1);
+    }
+    if (connect(send_sock, base_addr, base_addr_len) != 0) {
+      perror("Connect in client failed");
+    }
 
     // Send some kind of handshake
     uint32_t seq_num = 0;
@@ -118,9 +127,9 @@ int main(int argc, char *argv[])
         // printf("sock_num is %d\n", sock_num);
         // Echo back and tell the server from port it came, the lower one or the higher one.
         // This is encoded in `sock_num`
-        // assert(sock_num >= -1 && sock_num <= 1);
+        assert(sock_num >= 0 && sock_num <= 1);
         data[SEQ_NUM_LEN + TIMESTAMP_LEN + 1 - 1] = (char) sock_num;
-        sendto(sock, data, sizeof(data), 0, base_addr, base_addr_len);
+        send(send_sock, data, sizeof(data), 0);
     }
 
     // Close the socket and free the memory
