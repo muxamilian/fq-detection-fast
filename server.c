@@ -1,4 +1,3 @@
-// Include the necessary libraries
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -15,20 +14,17 @@
 #define likely(x)      __builtin_expect(!!(x), 1) 
 #define unlikely(x)    __builtin_expect(!!(x), 0)
 
+// Get the current time as a double representing the number of seconds since the epoch
 double get_unix_epoch_time() {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 
-struct timeval timeout_zero;
-
-// Define some constants
 #define SEQ_LEN 4
 #define TIMESTAMP_LEN 8
 #define FROM_SOCKET_LEN 1
 
-// Declare some global variables
 int port;
 int mtu;
 int debug;
@@ -48,9 +44,8 @@ char *send_buffer;
 struct sockaddr_in6 remote_addr;
 socklen_t remote_addrlen;
 
-// A function to parse the command line arguments
+// Parse the command line arguments
 void parse_args(int argc, char *argv[]) {
-  puts("Parsing arguments");
   // Initialize the default values
   port = 13579;
   mtu = 1500;
@@ -89,25 +84,21 @@ void parse_args(int argc, char *argv[]) {
         debug = 1;
       }
       else {
-        // Unknown flag
         fprintf(stderr, "Unknown flag: %s\n", argv[i]);
         exit(1);
       }
     }
     else {
-      // Invalid argument
       fprintf(stderr, "Invalid argument: %s\n", argv[i]);
       exit(1);
     }
   }
 }
 
-// A function to create and bind the sockets
+// Create and bind the sending sockets
 void create_sockets() {
-  puts("create sockets");
   // Loop through the ports
   for (int i = 0; i < 2; i++) {
-    // Create a socket
     socks[i] = socket(AF_INET6, SOCK_DGRAM, 0);
     if (socks[i] < 0) {
       // Socket creation failed
@@ -137,10 +128,8 @@ void create_sockets() {
   }
 }
 
-// A function to create and bind the receive socket
+// Create and bind the receive socket
 void create_recv_socket() {
-  puts("create recv socket");
-  // Create a socket
   recv_socket = socket(AF_INET6, SOCK_DGRAM, 0);
   if (recv_socket < 0) {
     // Socket creation failed
@@ -167,14 +156,12 @@ void create_recv_socket() {
   }
 }
 
-// A function to get an estimate of the RTT
+// Get an estimate of the RTT
 void get_initial_rtt() {
-  puts("Get initial rtt");
   // Create a sockaddr_in6 structure to store the client address
   remote_addrlen = sizeof(remote_addr);
   // Receive a packet from the client
   char data[1500];
-  puts("Listening");
   int n = recvfrom(recv_socket, data, 1500, 0, (struct sockaddr *)&remote_addr, &remote_addrlen);
   if (n < 0) {
     // Receive failed
@@ -226,10 +213,8 @@ void get_initial_rtt() {
   }
 }
 
-// A function to detect fair queuing
+// The main part: The function to detect fair queuing
 void detect_fair_queuing() {
-  puts("Trying to detect fair queuing");
-  // Num of bytes to read on recv_socket
   int count;
   ssize_t bytes_received;
   unsigned int ack_num;
@@ -416,8 +401,6 @@ void detect_fair_queuing() {
 }
 
 int main(int argc, char *argv[]) {
-  timeout_zero.tv_sec = 0;
-  timeout_zero.tv_usec = 0;
   parse_args(argc, argv);
   printf("server: port: %d, mtu: %d, debug: %d\n", port, mtu, debug);
   // Subtract 40 for IPv6 and 8 for UDP
@@ -431,6 +414,5 @@ int main(int argc, char *argv[]) {
   create_recv_socket();
   get_initial_rtt();
   detect_fair_queuing();
-  puts("Terminating server");
   return 0;
 }

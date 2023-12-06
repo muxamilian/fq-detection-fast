@@ -1,4 +1,3 @@
-// Include the necessary libraries
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,7 +8,6 @@
 #include <unistd.h>
 #include <assert.h>
 
-// Define some constants
 #define DEFAULT_PORT 13579
 #define DEFAULT_SERVER_ADDRESS "127.0.0.1"
 #define SEQ_NUM_LEN 4
@@ -124,7 +122,6 @@ int main(int argc, char *argv[])
                 break;
             }
         }
-        // printf("sock_num is %d\n", sock_num);
         // Echo back and tell the server from port it came, the lower one or the higher one.
         // This is encoded in `sock_num`
         assert(sock_num >= 0 && sock_num <= 1);
