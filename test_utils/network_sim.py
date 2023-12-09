@@ -77,13 +77,13 @@ results = []
 
 max_reps = 10
 
-# for delay in (10, 50, 100):
-for delay in (50,):
+for delay in (10, 50, 100):
+# for delay in (50,):
     bw_results.append([])
     delay_results.append([])
     results.append([])
-    # for rate in (10, 50):#, 100):
-    for rate in (50,):
+    for rate in (10, 50, 100):
+    # for rate in (50,):
         bw_results[-1].append([])
         delay_results[-1].append([])
         results[-1].append([])
